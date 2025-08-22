@@ -1,0 +1,185 @@
+@page "/webcam"
+@using RoboSimWebUI.Services
+@inject RoboSimApiService ApiService
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Webcam Feed</PageTitle>
+
+<div class="webcam-container">
+    <h3>Robot Webcam Feed</h3>
+    
+    <div class="webcam-controls mb-3">
+        <button class="btn btn-primary" @onclick="RefreshImage" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                <span>Loading...</span>
+            }
+            else
+            {
+                <span>Refresh Image</span>
+            }
+        </button>
+        
+        <button class="btn btn-secondary ms-2" @onclick="ToggleAutoRefresh">
+            @if (autoRefresh)
+            {
+                <span>Stop Auto Refresh</span>
+            }
+            else
+            {
+                <span>Start Auto Refresh</span>
+            }
+        </button>
+    </div>
+
+    <div class="webcam-display">
+        @if (!string.IsNullOrEmpty(imageDataUrl))
+        {
+            <img src="@imageDataUrl" alt="Webcam Feed" class="webcam-image" />
+            <div class="image-info">
+                <small class="text-muted">Last updated: @lastUpdated.ToString("HH:mm:ss")</small>
+            </div>
+        }
+        else if (isLoading)
+        {
+            <div class="loading-placeholder">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Loading webcam image...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger" role="alert">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+        else
+        {
+            <div class="no-image-placeholder">
+                <p>No image available. Click "Refresh Image" to load the webcam feed.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string? imageDataUrl;
+    private bool isLoading = false;
+    private bool autoRefresh = false;
+    private DateTime lastUpdated;
+    private string? errorMessage;
+    private Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshImage();
+    }
+
+    private async Task RefreshImage()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var imageBytes = await ApiService.GetWebcamImageAsync();
+            if (imageBytes != null && imageBytes.Length > 0)
+            {
+                var base64String = Convert.ToBase64String(imageBytes);
+                imageDataUrl = $"data:image/jpeg;base64,{base64String}";
+                lastUpdated = DateTime.Now;
+                errorMessage = null;
+            }
+            else
+            {
+                errorMessage = "Failed to retrieve webcam image from the server.";
+                imageDataUrl = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading webcam image: {ex.Message}";
+            imageDataUrl = null;
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        autoRefresh = !autoRefresh;
+        
+        if (autoRefresh)
+        {
+            // Start auto refresh every 2 seconds
+            refreshTimer = new Timer(async _ => await InvokeAsync(RefreshImage), null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+        }
+        else
+        {
+            // Stop auto refresh
+            refreshTimer?.Dispose();
+            refreshTimer = null;
+        }
+        
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}
+
+<style>
+    .webcam-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .webcam-display {
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        background-color: #f8f9fa;
+        min-height: 400px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .webcam-image {
+        max-width: 100%;
+        max-height: 500px;
+        border-radius: 4px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .loading-placeholder, .no-image-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        color: #6c757d;
+    }
+
+    .image-info {
+        margin-top: 10px;
+    }
+
+    .webcam-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+</style>

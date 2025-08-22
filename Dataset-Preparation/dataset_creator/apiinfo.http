@@ -1,0 +1,193 @@
+# VS Code REST Client file for PyBullet HTTP control
+# Requires the PyBullet viewer running with HTTP enabled (default):
+#   .venv/bin/python scripts/PybulletViewer.py --gui --urdf urdf/five_dof_arm.urdf
+#
+# Tips:
+# - Adjust @host and @port if you started the viewer with different values.
+# - Check /api/joints first to confirm joint indices before setting targets.
+# - Values are clamped to joint limits when available.
+
+@host=127.0.0.1
+@port=5000
+
+# Default parameters for convenience (edit these for quick testing)
+@joint_id=1
+@value=1.1
+
+###
+# @name health
+GET http://{{host}}:{{port}}/api/health
+Accept: application/json
+
+###
+# @name joints
+GET http://{{host}}:{{port}}/api/joints
+Accept: application/json
+
+###
+# @name setJoint
+# Set a single joint (using variables above)
+GET http://{{host}}:{{port}}/api/joint/{{joint_id}}/{{value}}
+Accept: application/json
+
+###
+# @name setJoint0_example
+# Example: set joint 0 to 0.25 rad
+GET http://{{host}}:{{port}}/api/joint/0/0.25
+Accept: application/json
+
+###
+# @name setJoint1_example
+# Example: set joint 1 to 1.10 rad
+GET http://{{host}}:{{port}}/api/joint/1/1.10
+Accept: application/json
+
+###
+# @name setJoint2_example
+# Example: set joint 2 to -0.75 rad
+GET http://{{host}}:{{port}}/api/joint/2/-0.75
+Accept: application/json
+
+###
+# @name setJoint3_example
+# Example: set joint 3 to 0.50 rad
+GET http://{{host}}:{{port}}/api/joint/3/0.50
+Accept: application/json
+
+###
+# @name setJoint4_example
+# Example: set joint 4 to -1.25 rad
+GET http://{{host}}:{{port}}/api/joint/4/-1.25
+Accept: application/json
+
+###
+# @name setJoint_instant_example
+# Example: set joint 1 to 1.0 rad instantly
+GET http://{{host}}:{{port}}/api/joint/1/1.0/instant
+Accept: application/json
+
+###
+# @name setJoint_negative_example
+# Example: set joint 2 to -0.75 rad instantly
+GET http://{{host}}:{{port}}/api/joint/2/-0.75/instant
+Accept: application/json
+
+###
+# @name camera1
+# Get top view camera image
+GET http://{{host}}:{{port}}/api/camera/1
+Accept: image/jpeg
+
+###
+# @name camera2
+# Get side view camera image
+GET http://{{host}}:{{port}}/api/camera/2
+Accept: image/jpeg
+
+###
+# @name camera3
+# Get front-left angled camera image
+GET http://{{host}}:{{port}}/api/camera/3
+Accept: image/jpeg
+
+###
+# Camera + Joint Instant Examples
+# Set joint position instantly and capture image
+
+# @name instant_joint_and_camera_1
+# Set joint 1 to 1.5 rad instantly
+GET http://{{host}}:{{port}}/api/joint/1/1.5/instant
+Accept: application/json
+
+###
+# @name instant_joint_and_camera_2
+# Then capture top view
+GET http://{{host}}:{{port}}/api/camera/1
+Accept: image/jpeg
+
+###
+# @name pose_instant_neutral_j0
+# Instant neutral pose - joint 0
+GET http://{{host}}:{{port}}/api/joint/0/0.0/instant
+Accept: application/json
+
+###
+# @name pose_instant_neutral_j1
+# Instant neutral pose - joint 1
+GET http://{{host}}:{{port}}/api/joint/1/0.0/instant
+Accept: application/json
+
+###
+# @name pose_instant_neutral_j2
+# Instant neutral pose - joint 2
+GET http://{{host}}:{{port}}/api/joint/2/0.0/instant
+Accept: application/json
+
+###
+# @name pose_instant_neutral_j3
+# Instant neutral pose - joint 3
+GET http://{{host}}:{{port}}/api/joint/3/0.0/instant
+Accept: application/json
+
+###
+# @name pose_instant_neutral_j4
+# Instant neutral pose - joint 4
+GET http://{{host}}:{{port}}/api/joint/4/0.0/instant
+Accept: application/json
+
+###
+# @name pose_instant_reach_j1
+# Instant reach pose - joint 1
+GET http://{{host}}:{{port}}/api/joint/1/0.8/instant
+Accept: application/json
+
+###
+# @name pose_instant_reach_j2
+# Instant reach pose - joint 2
+GET http://{{host}}:{{port}}/api/joint/2/0.8/instant
+Accept: application/json
+
+###
+# Pose presets (send requests one-by-one; order matters)
+# Verify joint indices via /api/joints before using these.
+
+# @name pose_neutral_j0
+GET http://{{host}}:{{port}}/api/joint/0/0.0
+Accept: application/json
+# @name pose_neutral_j1
+GET http://{{host}}:{{port}}/api/joint/1/0.0
+Accept: application/json
+# @name pose_neutral_j2
+GET http://{{host}}:{{port}}/api/joint/2/0.0
+Accept: application/json
+# @name pose_neutral_j3
+GET http://{{host}}:{{port}}/api/joint/3/0.0
+Accept: application/json
+# @name pose_neutral_j4
+GET http://{{host}}:{{port}}/api/joint/4/0.0
+Accept: application/json
+
+###
+# @name pose_reach_forward_j0
+GET http://{{host}}:{{port}}/api/joint/0/0.0
+Accept: application/json
+# @name pose_reach_forward_j1
+GET http://{{host}}:{{port}}/api/joint/1/0.8
+Accept: application/json
+# @name pose_reach_forward_j2
+GET http://{{host}}:{{port}}/api/joint/2/0.8
+Accept: application/json
+# @name pose_reach_forward_j3
+GET http://{{host}}:{{port}}/api/joint/3/0.2
+Accept: application/json
+# @name pose_reach_forward_j4
+GET http://{{host}}:{{port}}/api/joint/4/0.0
+Accept: application/json
+
+###
+# Notes:
+# - To expose the API on your LAN, start the viewer with:
+#     .venv/bin/python scripts/PybulletViewer.py --gui --http-host 0.0.0.0 --http-port 5000
+#   Then update @host to the machine IP.
+# - Headless mode still accepts HTTP:
+#     .venv/bin/python scripts/PybulletViewer.py --direct

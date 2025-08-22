@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+torch
+requests
+opencv-python
+pillow
+tensorflow

@@ -1,0 +1,810 @@
+@page "/"
+@page "/dashboard"
+@using RoboSimWebUI.Services
+@inject RoboSimApiService ApiService
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Robot Control Dashboard</PageTitle>
+
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>Robot Control Dashboard</h1>
+        <p class="lead">Monitor camera feed and control joint positions</p>
+    </div>
+
+    <div class="dashboard-content expanded-layout">
+        <!-- Camera Images Section - All images in one row with no gaps -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="webcam-grid-container">
+                    <!-- Top Camera -->
+                    <div class="webcam-item">
+                        <div class="webcam-display-seamless">
+                            @if (!string.IsNullOrEmpty(webcamTopUrl))
+                            {
+                                <img src="@webcamTopUrl" alt="Top Camera" class="webcam-image-seamless" />
+                            }
+                            else if (isLoadingWebcamTop)
+                            {
+                                <div class="loading-placeholder-seamless">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p>Loading top camera...</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="no-image-placeholder-seamless text-center text-muted">
+                                    <p>No image available</p>
+                                </div>
+                            }
+                        </div>
+                        <div class="webcam-label">Top Camera</div>
+                    </div>
+
+                    <!-- Side Camera -->
+                    <div class="webcam-item">
+                        <div class="webcam-display-seamless">
+                            @if (!string.IsNullOrEmpty(webcamSideUrl))
+                            {
+                                <img src="@webcamSideUrl" alt="Side Camera" class="webcam-image-seamless" />
+                            }
+                            else if (isLoadingWebcamSide)
+                            {
+                                <div class="loading-placeholder-seamless">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p>Loading side camera...</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="no-image-placeholder-seamless text-center text-muted">
+                                    <p>No image available</p>
+                                </div>
+                            }
+                        </div>
+                        <div class="webcam-label">Side Camera</div>
+                    </div>
+
+                    <!-- Front-Left Camera -->
+                    <div class="webcam-item">
+                        <div class="webcam-display-seamless">
+                            @if (!string.IsNullOrEmpty(webcamFrontUrl))
+                            {
+                                <img src="@webcamFrontUrl" alt="Front-Left Camera" class="webcam-image-seamless" />
+                            }
+                            else if (isLoadingWebcamFront)
+                            {
+                                <div class="loading-placeholder-seamless">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p>Loading front camera...</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="no-image-placeholder-seamless text-center text-muted">
+                                    <p>No image available</p>
+                                </div>
+                            }
+                        </div>
+                        <div class="webcam-label">Front-Left Camera</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header py-2 px-3">
+                        <h5 class="card-title mb-0">Camera Controls</h5>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="webcam-controls-grid">
+                            <!-- Individual Camera Controls -->
+                            <div class="control-group">
+                                <label class="control-label">Top Camera</label>
+                                <div class="control-buttons">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => RefreshSingleWebcam(1)" disabled="@isLoadingWebcamTop">
+                                        @if (isLoadingWebcamTop)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <span>Refresh</span>
+                                    </button>
+                                    <small class="text-muted ms-2">@webcamTopLastUpdated.ToString("HH:mm:ss")</small>
+                                </div>
+                            </div>
+
+                            <div class="control-group">
+                                <label class="control-label">Side Camera</label>
+                                <div class="control-buttons">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => RefreshSingleWebcam(2)" disabled="@isLoadingWebcamSide">
+                                        @if (isLoadingWebcamSide)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <span>Refresh</span>
+                                    </button>
+                                    <small class="text-muted ms-2">@webcamSideLastUpdated.ToString("HH:mm:ss")</small>
+                                </div>
+                            </div>
+
+                            <div class="control-group">
+                                <label class="control-label">Front-Left Camera</label>
+                                <div class="control-buttons">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => RefreshSingleWebcam(3)" disabled="@isLoadingWebcamFront">
+                                        @if (isLoadingWebcamFront)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <span>Refresh</span>
+                                    </button>
+                                    <small class="text-muted ms-2">@webcamFrontLastUpdated.ToString("HH:mm:ss")</small>
+                                </div>
+                            </div>
+
+                            <!-- Global Controls -->
+                            <div class="control-group">
+                                <label class="control-label">Global Controls</label>
+                                <div class="control-buttons">
+                                    <button class="btn btn-sm btn-success" @onclick="RefreshAllWebcams" disabled="@isLoadingWebcam">
+                                        @if (isLoadingWebcam)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <span>Refresh All</span>
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary ms-2" @onclick="ToggleWebcamAutoRefresh">
+                                        @if (webcamAutoRefresh)
+                                        {
+                                            <span>Stop Auto</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Start Auto</span>
+                                        }
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Joint Controls -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card h-100">
+                    <div class="card-header py-2 px-3 d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Joint Controls</h5>
+                        <div class="joint-controls">
+                            <button class="btn btn-sm btn-success" @onclick="RefreshJoints" disabled="@isLoadingJoints">
+                                @if (isLoadingJoints)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                }
+                                <span>Refresh</span>
+                            </button>
+                            <button class="btn btn-sm btn-warning ms-2" @onclick="ResetJoints" disabled="@isLoadingJoints">
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="joint-grid-inline">
+                            @foreach (var jointData in joints)
+                            {
+                                <div class="joint-item-inline">
+                                    <div class="joint-title">
+                                        <small class="text-muted">@jointData.Name</small>
+                                    </div>
+                                    <div class="joint-values">
+                                        <small class="text-muted">C:@jointData.CurrentPosition.ToString("F2")</small>
+                                        <small class="text-muted">T:@jointData.TargetPosition.ToString("F2")</small>
+                                    </div>
+                                    <div class="joint-input">
+                                        <div class="slider-container">
+                                            <input type="range"
+                                                   class="form-range form-range-sm"
+                                                   @bind="targetPositions[jointData.Id]"
+                                                   @oninput="e => OnSliderChanged(jointData.Id, e)"
+                                                   min="@jointData.Lower"
+                                                   max="@jointData.Upper"
+                                                   step="0.01" />
+                                            <div class="slider-value-display">
+                                                <span class="current-value">@targetPositions[jointData.Id].ToString("F2")</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="joint-action">
+                                        <button class="btn btn-sm btn-primary" @onclick="() => SetJointTarget(jointData.Id)" disabled="@isLoadingJoints">Set</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Status row -->
+        <div class="row mt-2">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center small-gap">
+                    <div class="status-info">
+                        @if (!string.IsNullOrEmpty(statusMessage))
+                        {
+                            <div class="alert alert-success alert-sm mb-0" role="alert">
+                                @statusMessage
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger alert-sm mb-0" role="alert">
+                                @errorMessage
+                            </div>
+                        }
+                        @if (string.IsNullOrEmpty(statusMessage) && string.IsNullOrEmpty(errorMessage))
+                        {
+                            <span class="text-muted">Ready</span>
+                        }
+                    </div>
+                    <div class="navigation-links">
+                        <a href="/webcam" class="btn btn-outline-primary btn-sm me-2">Webcam</a>
+                        <a href="/joints" class="btn btn-outline-secondary btn-sm">Joints</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string? webcamTopUrl;
+    private string? webcamFrontUrl;
+    private string? webcamSideUrl;
+    private bool isLoadingWebcam = false;
+    private bool isLoadingWebcamTop = false;
+    private bool isLoadingWebcamFront = false;
+    private bool isLoadingWebcamSide = false;
+    private bool webcamAutoRefresh = false;
+    private DateTime webcamTopLastUpdated;
+    private DateTime webcamFrontLastUpdated;
+    private DateTime webcamSideLastUpdated;
+    private Timer? webcamTimer;
+
+    private DetailedJointInfo[] joints = Array.Empty<DetailedJointInfo>();
+    private Dictionary<int, double> targetPositions = new();
+    private bool isLoadingJoints = false;
+    private Dictionary<int, Timer?> debounceTimers = new();
+
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load initial data (all three camera views + joints)
+        await Task.WhenAll(RefreshAllWebcams(), RefreshJoints());
+    }
+
+    private async Task RefreshAllWebcams()
+    {
+        isLoadingWebcam = true;
+        isLoadingWebcamTop = true;
+        isLoadingWebcamFront = true;
+        isLoadingWebcamSide = true;
+        StateHasChanged();
+
+        try
+        {
+            var tTop = ApiService.GetWebcamImageAsync(1);
+            var tSide = ApiService.GetWebcamImageAsync(2);
+            var tFront = ApiService.GetWebcamImageAsync(3);
+
+            await Task.WhenAll(tTop, tSide, tFront);
+
+            var bTop = tTop.Result;
+            var bSide = tSide.Result;
+            var bFront = tFront.Result;
+
+            if (bTop != null && bTop.Length > 0)
+            {
+                webcamTopUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(bTop)}";
+                webcamTopLastUpdated = DateTime.Now;
+            }
+
+            if (bSide != null && bSide.Length > 0)
+            {
+                webcamSideUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(bSide)}";
+                webcamSideLastUpdated = DateTime.Now;
+            }
+
+            if (bFront != null && bFront.Length > 0)
+            {
+                webcamFrontUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(bFront)}";
+                webcamFrontLastUpdated = DateTime.Now;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Camera error: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingWebcam = false;
+            isLoadingWebcamTop = false;
+            isLoadingWebcamFront = false;
+            isLoadingWebcamSide = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshSingleWebcam(int cameraId)
+    {
+        try
+        {
+            switch (cameraId)
+            {
+                case 1:
+                    isLoadingWebcamTop = true;
+                    StateHasChanged();
+                    var topBytes = await ApiService.GetWebcamImageAsync(1);
+                    if (topBytes != null && topBytes.Length > 0)
+                    {
+                        webcamTopUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(topBytes)}";
+                        webcamTopLastUpdated = DateTime.Now;
+                    }
+                    isLoadingWebcamTop = false;
+                    break;
+                    
+                case 2:
+                    isLoadingWebcamSide = true;
+                    StateHasChanged();
+                    var sideBytes = await ApiService.GetWebcamImageAsync(2);
+                    if (sideBytes != null && sideBytes.Length > 0)
+                    {
+                        webcamSideUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(sideBytes)}";
+                        webcamSideLastUpdated = DateTime.Now;
+                    }
+                    isLoadingWebcamSide = false;
+                    break;
+                    
+                case 3:
+                    isLoadingWebcamFront = true;
+                    StateHasChanged();
+                    var frontBytes = await ApiService.GetWebcamImageAsync(3);
+                    if (frontBytes != null && frontBytes.Length > 0)
+                    {
+                        webcamFrontUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(frontBytes)}";
+                        webcamFrontLastUpdated = DateTime.Now;
+                    }
+                    isLoadingWebcamFront = false;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Camera {cameraId} error: {ex.Message}";
+            switch (cameraId)
+            {
+                case 1: isLoadingWebcamTop = false; break;
+                case 2: isLoadingWebcamSide = false; break;
+                case 3: isLoadingWebcamFront = false; break;
+            }
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshJoints()
+    {
+        isLoadingJoints = true;
+        StateHasChanged();
+
+        try
+        {
+            var jointsResponse = await ApiService.GetAllJointsAsync();
+            if (jointsResponse != null)
+            {
+                joints = jointsResponse.Joints;
+
+                // Update target position inputs with current target values
+                targetPositions.Clear();
+                foreach (var joint in joints)
+                {
+                    targetPositions[joint.Id] = joint.TargetPosition;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Joint error: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingJoints = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SetJointTarget(int jointId)
+    {
+        try
+        {
+            var success = await ApiService.SetJointPositionAsync(jointId, targetPositions[jointId]);
+            if (success)
+            {
+                var jointName = joints.FirstOrDefault(j => j.Id == jointId)?.Name ?? $"Joint {jointId}";
+                statusMessage = $"{jointName} set to {targetPositions[jointId]:F3} rad";
+                await RefreshJoints();
+            }
+            else
+            {
+                errorMessage = $"Failed to set joint {jointId} target";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error setting joint {jointId}: {ex.Message}";
+        }
+    }
+
+    private void OnSliderChanged(int jointId, ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double newValue))
+        {
+            targetPositions[jointId] = newValue;
+
+            // Cancel existing timer for this joint
+            if (debounceTimers.ContainsKey(jointId) && debounceTimers[jointId] != null)
+            {
+                debounceTimers[jointId]?.Dispose();
+                debounceTimers[jointId] = null;
+            }
+
+            // Start new timer - will send API request after 1 second if no more changes
+            debounceTimers[jointId] = new Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    // Remove timer reference
+                    debounceTimers[jointId]?.Dispose();
+                    debounceTimers[jointId] = null;
+
+                    // Send API request
+                    await SetJointTargetDebounced(jointId, newValue);
+                });
+            }, null, 1000, Timeout.Infinite);
+        }
+    }
+
+    private async Task SetJointTargetDebounced(int jointId, double targetValue)
+    {
+        try
+        {
+            var success = await ApiService.SetJointPositionAsync(jointId, targetValue);
+            if (success)
+            {
+                // Get joint name for better user feedback
+                var jointName = joints.FirstOrDefault(j => j.Id == jointId)?.Name ?? $"Joint {jointId}";
+                statusMessage = $"{jointName} set to {targetValue:F3} rad";
+                // Refresh to get updated values
+                await RefreshJoints();
+            }
+            else
+            {
+                errorMessage = $"Failed to set target for joint {jointId}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error setting joint {jointId} target: {ex.Message}";
+        }
+    }
+
+    private async Task ResetJoints()
+    {
+        try
+        {
+            var success = await ApiService.ResetJointsAsync();
+            if (success)
+            {
+                statusMessage = "All joints reset to neutral position";
+                await RefreshJoints();
+            }
+            else
+            {
+                errorMessage = "Failed to reset joints";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Reset error: {ex.Message}";
+        }
+    }
+
+    private void ToggleWebcamAutoRefresh()
+    {
+        webcamAutoRefresh = !webcamAutoRefresh;
+        
+        if (webcamAutoRefresh)
+        {
+            webcamTimer = new Timer(async _ => await InvokeAsync(RefreshAllWebcams), null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+        }
+        else
+        {
+            webcamTimer?.Dispose();
+            webcamTimer = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        webcamTimer?.Dispose();
+
+        // Dispose all debounce timers
+        foreach (var timer in debounceTimers.Values)
+        {
+            timer?.Dispose();
+        }
+        debounceTimers.Clear();
+    }
+}
+
+<style>
+    .expanded-layout {
+        max-width: 1600px;
+        padding: 20px;
+        margin: 0 auto;
+    }
+    
+    .small-gap {
+        gap: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    /* Seamless webcam grid layout */
+    .webcam-grid-container {
+        display: flex;
+        width: 100%;
+        gap: 0;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .webcam-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .webcam-item:not(:last-child) {
+        border-right: 2px solid #dee2e6;
+    }
+
+    .webcam-display-seamless {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 400px;
+        background-color: #f8f9fa;
+        position: relative;
+    }
+
+    .webcam-image-seamless {
+        width: 100%;
+        height: 400px;
+        object-fit: cover;
+        display: block;
+    }
+
+    .webcam-label {
+        background-color: #343a40;
+        color: white;
+        text-align: center;
+        padding: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .loading-placeholder-seamless, .no-image-placeholder-seamless {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        color: #6c757d;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    .loading-placeholder-seamless .spinner-border {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    /* Controls grid */
+    .webcam-controls-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        align-items: start;
+    }
+
+    .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .control-label {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 4px;
+    }
+
+    .control-buttons {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    /* Joint grid styles */
+    .joint-grid-inline {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 8px;
+        align-items: start;
+    }
+
+    .joint-item-inline {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px;
+        border-radius: 6px;
+        background: #f8f9fa;
+        border: 1px solid #e6e6e6;
+        align-items: stretch;
+    }
+
+    .joint-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .joint-values {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8rem;
+        color: #666;
+    }
+    
+    .joint-input input {
+        width: 100%;
+        padding: 4px 6px;
+        font-size: 0.85rem;
+    }
+    
+    .joint-action {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .slider-container {
+        margin-bottom: 5px;
+    }
+
+    .form-range-sm {
+        width: 100%;
+        height: 6px;
+    }
+
+    .slider-value-display {
+        display: flex;
+        justify-content: center;
+        margin-top: 2px;
+    }
+
+    .current-value {
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: #007bff;
+        background-color: #f8f9fa;
+        padding: 1px 4px;
+        border-radius: 3px;
+        border: 1px solid #dee2e6;
+    }
+
+    /* Card styles */
+    .card .card-header .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    
+    .card-body {
+        padding: 15px;
+    }
+
+    .navigation-links a {
+        margin-left: 6px;
+    }
+
+    /* Responsive design */
+    @@media (max-width: 1200px) {
+        .expanded-layout {
+            max-width: 100%;
+            padding: 15px;
+        }
+        .webcam-image-seamless {
+            height: 350px;
+        }
+        .webcam-display-seamless {
+            min-height: 350px;
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .joint-grid-inline {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .webcam-grid-container {
+            flex-direction: column;
+        }
+        .webcam-item:not(:last-child) {
+            border-right: none;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .webcam-image-seamless {
+            height: 300px;
+        }
+        .webcam-display-seamless {
+            min-height: 300px;
+        }
+        .webcam-controls-grid {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .joint-grid-inline {
+            grid-template-columns: 1fr;
+        }
+        .webcam-image-seamless {
+            height: 250px;
+        }
+        .webcam-display-seamless {
+            min-height: 250px;
+        }
+        .webcam-controls-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        .expanded-layout {
+            padding: 10px;
+        }
+    }
+</style>

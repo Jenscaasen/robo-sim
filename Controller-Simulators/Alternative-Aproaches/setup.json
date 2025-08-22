@@ -1,0 +1,80 @@
+{
+  "cameras": [
+    {
+      "id": 1,
+      "name": "top_camera",
+      "position": [0, 0, 80],
+      "look_at": [0, 0, 0]
+    },
+    {
+      "id": 2,
+      "name": "front_camera",
+      "position": [50, 0, 0],
+      "look_at": [0, 0, 0]
+    },
+    {
+      "id": 3,
+      "name": "side_camera",
+      "position": [0, 50, 0],
+      "look_at": [0, 0, 0]
+    }
+  ],
+   "cylinders": [
+    {
+      "name": "baseplate",
+      "radius": 50,
+      "color": "orange",
+      "start_point": [0, 0, 0],
+      "end_point": [5, 0, 0]
+    },
+    {
+      "name": "shoulder_joint",
+      "radius": 10,
+      "color": "yellow",
+      "start_point": [0, 4, 0],
+      "end_point": [0, 6, 0]
+    },
+    {
+      "name": "upper_arm",
+      "radius": 5,
+      "color": "blue",
+      "start_point": [5, 0, 0],
+      "end_point": [0, 30, 60]
+    },
+    {
+      "name": "elbow_joint",
+      "radius": 10,
+      "color": "yellow",
+      "start_point": [0, 25, 60],
+      "end_point": [0, 35, 60]
+    },
+    {
+      "name": "lower_arm",
+      "radius": 5,
+      "color": "blue",
+      "start_point": [0, 30, 60],
+      "end_point": [0, 60, 40]
+    },
+    {
+      "name": "wrist_joint",
+      "radius": 8,
+      "color": "yellow",
+      "start_point": [0, 58, 40],
+      "end_point": [0, 62, 40]
+    },
+    {
+      "name": "grapper_left",
+      "radius": 3,
+      "color": "green",
+      "start_point": [-5, 60, 40],
+      "end_point": [-5, 70, 40]
+    },
+    {
+      "name": "grapper_right",
+      "radius": 3,
+      "color": "green",
+      "start_point": [5, 60, 40],
+      "end_point": [5, 70, 40]
+    }
+  ]
+}
