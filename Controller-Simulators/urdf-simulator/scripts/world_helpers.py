@@ -17,6 +17,8 @@ def add_wall(x: float = 0.0, rgba=(0.6, 0.6, 0.6, 1.0)) -> int:
 def spawn_cubes_on_floor(count: int, x: float = 0.5, y0: float = 0.0, z: float = 0.65, spacing: float = 0.15) -> List[int]:
     import pybullet as p
     ids: List[int] = []
+
+    # Original behavior: spawn the base cubes horizontally
     palette = [
         (0.90, 0.10, 0.10, 1.0),  # red
         (0.10, 0.60, 0.95, 1.0),  # blue
@@ -25,6 +27,8 @@ def spawn_cubes_on_floor(count: int, x: float = 0.5, y0: float = 0.0, z: float =
         (0.80, 0.20, 0.85, 1.0),  # magenta
         (1.00, 0.55, 0.00, 1.0),  # orange
     ]
+
+    # Spawn the original cubes horizontally (no stacking)
     for i in range(max(0, count)):
         y = y0 + (i - (count - 1) * 0.5) * spacing
         uid = p.loadURDF("cube_small.urdf", basePosition=[x, y, z])
@@ -34,6 +38,7 @@ def spawn_cubes_on_floor(count: int, x: float = 0.5, y0: float = 0.0, z: float =
         except Exception:
             pass
         ids.append(uid)
+
     return ids
 
 

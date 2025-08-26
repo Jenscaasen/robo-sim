@@ -6,6 +6,7 @@ Mistral API client with tools integration for the URDF simulator using the offic
 import os
 import json
 import functools
+import sys
 from typing import Dict, List, Optional, Any
 from simulator_client import SimulatorClient
 from mistralai import Mistral
@@ -13,6 +14,10 @@ from mistralai.models.function import Function
 from mistralai.models.toolmessage import ToolMessage
 from mistralai.models.usermessage import UserMessage
 from mistralai.models.assistantmessage import AssistantMessage
+
+# Add path to Supervised_learning for importing the prediction module
+sys.path.append('../../Supervised_learning')
+from GetServoPositionsForPixels import predict_servo_positions
 
 class MistralClient:
     def __init__(self, simulator: SimulatorClient, api_key: str = None):
@@ -133,8 +138,32 @@ class MistralClient:
                         "required": ["color_name"]
                     },
                 ),
+            },
+            {
+                "type": "function",
+                "function": Function(
+                    name="get_servo_positions_for_pixels",
+                    description="Predict servo positions from pixel coordinates using Keras model",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "pixels": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 6,
+                                "maxItems": 6,
+                                "description": "List of 6 pixel coordinates [cam1_x, cam1_y, cam2_x, cam2_y, cam3_x, cam3_y]"
+                            }
+                        },
+                        "required": ["pixels"]
+                    },
+                ),
             }
         ]
+
+        # Define the servo prediction function
+        async def get_servo_positions_for_pixels_async(pixels):
+            return predict_servo_positions(pixels)
 
         # Map tool names to simulator functions
         self.names_to_functions = {}
@@ -148,7 +177,8 @@ class MistralClient:
                 "reset_joints": self.simulator.reset_joints,
                 "read_cam_image": functools.partial(self.simulator.read_cam_image),
                 "self_read_cam_image": functools.partial(self.simulator.read_cam_image),
-                "detect_color_position": functools.partial(self.simulator.detect_color_position)
+                "detect_color_position": functools.partial(self.simulator.detect_color_position),
+                "get_servo_positions_for_pixels": get_servo_positions_for_pixels_async
             }
         else:
             # Create dummy functions for when simulator is None
@@ -162,7 +192,8 @@ class MistralClient:
                 "reset_joints": dummy_function,
                 "read_cam_image": dummy_function,
                 "self_read_cam_image": dummy_function,
-                "detect_color_position": dummy_function
+                "detect_color_position": dummy_function,
+                "get_servo_positions_for_pixels": get_servo_positions_for_pixels_async  # Still available even without simulator
             }
 
     async def call_tool(self, tool_name: str, parameters: Dict) -> Any:
@@ -171,7 +202,7 @@ class MistralClient:
             if tool_name == "set_joint":
                 return await self.names_to_functions[tool_name](parameters["joint_id"], parameters["value"])
             elif tool_name == "set_multiple_joints":
-                return await self.names_to_functions[tool_name](parameters["joints"], parameters.get("fast", False))
+                return await self.names_to_functions[tool_name](parameters["joints"])
             elif tool_name == "read_cam_image" or tool_name == "self_read_cam_image":
                 result = await self.names_to_functions[tool_name](parameters["camera_id"])
                 # For read_cam_image, return only the message to the LLM
@@ -185,6 +216,8 @@ class MistralClient:
                 result = await self.names_to_functions[tool_name](parameters["color_name"])
                 # Return the message to the LLM
                 return result["message"]
+            elif tool_name == "get_servo_positions_for_pixels":
+                return await self.names_to_functions[tool_name](parameters["pixels"])
             else:
                 return await self.names_to_functions[tool_name]()
         else:

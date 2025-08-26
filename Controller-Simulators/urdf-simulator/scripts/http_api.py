@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 import threading
 import math
 import base64
@@ -80,8 +80,13 @@ def get_camera_view(camera_id: int) -> bytes:
     return buffer.getvalue()
 
 
-def start_http_server(host: str, port: int, http_targets: Dict[int, float], joints_info_map: Dict[int, Dict[str, float]], lock: threading.Lock, robot_id: int = None) -> threading.Thread:
+def start_http_server(host: str, port: int, http_targets: Dict[int, float], joints_info_map: Dict[int, Dict[str, float]], lock: threading.Lock, robot_id: int = None, cube_ids: List[int] = None) -> threading.Thread:
     app = Flask(__name__)
+
+    # Store cube_ids for reset functionality
+    if cube_ids is None:
+        cube_ids = []
+    app.config['CUBE_IDS'] = cube_ids
 
     @app.get("/api/health")
     def health():
@@ -240,6 +245,13 @@ def start_http_server(host: str, port: int, http_targets: Dict[int, float], join
         Returns: {"results": [{"joint_id": 0, "requested": -1.2, "applied": -1.2, "actual_position": -1.1987}, ...]}
         """
         try:
+            # Debug logging: record raw request body and headers to help compare clients
+            try:
+                raw_body = request.get_data(as_text=True)
+            except Exception:
+                raw_body = str(request.get_data())
+            print(f"[DEBUG] /api/joints/fast - headers: {dict(request.headers)}")
+            print(f"[DEBUG] /api/joints/fast - raw body: {raw_body}")
             # Parse JSON body
             joint_commands = request.get_json()
             if not isinstance(joint_commands, list):
@@ -486,44 +498,175 @@ def start_http_server(host: str, port: int, http_targets: Dict[int, float], join
         except Exception as e:
             return jsonify({"error": f"Failed to move joints instantly: {str(e)}"}), 500
 
+    @app.route("/api/joints", methods=['POST'])
+    def set_multiple_joints_simple():
+        """
+        Endpoint to set joints to target positions without using the "fast" timestep tricks.
+        This endpoint will:
+         - validate and clamp requested joint targets,
+         - update the shared http_targets used by the simulation loop,
+         - apply position control commands (POSITION_CONTROL) for each joint using PyBullet,
+         - return the reported actual joint positions (no physics-bypass reset).
+        
+        Expected JSON body: [{"id": 0, "pos": -1.2}, {"id": 1, "pos": 0.3}, ...]
+        Returns: {"results": [{"joint_id": 0, "requested": -1.2, "applied": -1.2, "actual_position": -1.2}, ...]}
+        """
+        try:
+            # Parse JSON body
+            joint_commands = request.get_json()
+            if not isinstance(joint_commands, list):
+                return jsonify({"error": "Expected JSON array of joint commands"}), 400
+
+            if not joint_commands:
+                return jsonify({"error": "Empty joint commands array"}), 400
+
+            if robot_id is None:
+                return jsonify({"error": "robot_id not available for positioning"}), 500
+
+            # Validate all joint commands first
+            validated_commands = []
+            for cmd in joint_commands:
+                if not isinstance(cmd, dict) or 'id' not in cmd or 'pos' not in cmd:
+                    return jsonify({"error": "Each command must have 'id' and 'pos' fields"}), 400
+
+                joint_id = int(cmd['id'])
+                requested_pos = float(cmd['pos'])
+
+                if joint_id not in joints_info_map:
+                    return jsonify({"error": f"Invalid joint id: {joint_id}"}), 404
+
+                # Apply joint limits
+                meta = joints_info_map[joint_id]
+                lower = float(meta.get("lower", 0.0))
+                upper = float(meta.get("upper", 0.0))
+                clamped_pos = requested_pos
+                if upper > lower and not (math.isinf(lower) or math.isinf(upper)):
+                    clamped_pos = max(lower, min(upper, requested_pos))
+
+                validated_commands.append({
+                    'joint_id': joint_id,
+                    'requested': requested_pos,
+                    'clamped': clamped_pos,
+                    'meta': meta
+                })
+
+            # Update http_targets so normal simulation maintains these positions
+            with lock:
+                for cmd in validated_commands:
+                    joint_id = cmd['joint_id']
+                    clamped_pos = cmd['clamped']
+                    http_targets[joint_id] = clamped_pos
+
+            # Apply position control for each joint (do not bypass physics / do not change timestep)
+            for cmd in validated_commands:
+                joint_id = cmd['joint_id']
+                clamped_pos = cmd['clamped']
+                meta = cmd['meta']
+
+                max_force = float(meta.get("maxForce", 50.0))
+                max_velocity = float(meta.get("maxVelocity", 2.0))
+
+                # Use position control to target the requested angle; physics will resolve motion
+                p.setJointMotorControl2(
+                    bodyUniqueId=robot_id,
+                    jointIndex=joint_id,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPosition=clamped_pos,
+                    force=max_force,
+                    maxVelocity=max_velocity
+                )
+
+            # Return immediate reported positions (these are current readbacks, physics may still be moving)
+            results = []
+            for cmd in validated_commands:
+                joint_id = cmd['joint_id']
+                final_state = p.getJointState(robot_id, joint_id)
+                actual_position = final_state[0]
+
+                results.append({
+                    "joint_id": joint_id,
+                    "requested": cmd['requested'],
+                    "applied": cmd['clamped'],
+                    "actual_position": float(actual_position)
+                })
+
+            return jsonify({
+                "results": results,
+                "simple_mode": True,
+                "movement_commanded": True,
+                "joints_commanded": len(results)
+            })
+
+        except Exception as e:
+            return jsonify({"error": f"Failed to set joints: {str(e)}"}), 500
+
     @app.get("/api/reset/instant")
     def reset_all_joints_instant():
         """
         Reset all joints to 0.0 position instantly using resetJointState.
+        Also reset cube positions to their original positions.
         This bypasses physics for immediate reset to neutral position.
-        Returns: {"results": [{"joint_id": 0, "reset_to": 0.0, "actual_position": 0.0}, ...]}
+        Returns: {"results": [{"joint_id": 0, "reset_to": 0.0, "actual_position": 0.0}, ...], "cubes_reset": n}
         """
         try:
             if robot_id is None:
                 return jsonify({"error": "robot_id not available for reset"}), 500
-            
+
             # Reset all joints to 0.0 instantly and update http_targets
             results = []
             with lock:
                 for joint_id in joints_info_map.keys():
                     # Reset joint position instantly (bypasses physics)
                     p.resetJointState(bodyUniqueId=robot_id, jointIndex=joint_id, targetValue=0.0)
-                    
+
                     # Update http_targets so normal simulation maintains this position
                     http_targets[joint_id] = 0.0
-                    
+
                     # Get the position after reset (should be exactly 0.0)
                     final_state = p.getJointState(robot_id, joint_id)
                     actual_position = final_state[0]
-                    
+
                     results.append({
                         "joint_id": joint_id,
                         "reset_to": 0.0,
                         "actual_position": float(actual_position)
                     })
-            
+
+            # Reset cube positions to their original spread-out positions
+            cubes_reset = 0
+            cube_ids = app.config.get('CUBE_IDS', [])
+            original_cube_orientation = [0, 0, 0, 1]  # No rotation
+
+            # Calculate original positions for each cube based on their index
+            x = 0.5  # Original x position
+            y0 = 0.0  # Original y0 position
+            z = 0.65  # Original z position
+            spacing = 0.15  # Original spacing
+            count = len(cube_ids)
+
+            for i, cube_id in enumerate(cube_ids):
+                try:
+                    # Calculate the original y position for this cube
+                    y = y0 + (i - (count - 1) * 0.5) * spacing
+                    original_cube_position = [x, y, z]
+
+                    p.resetBasePositionAndOrientation(
+                        cube_id,
+                        original_cube_position,
+                        original_cube_orientation
+                    )
+                    cubes_reset += 1
+                except Exception as e:
+                    print(f"Failed to reset cube {cube_id}: {e}", file=sys.stderr)
+
             return jsonify({
                 "results": results,
                 "reset_mode": "instant",
                 "reset_completed": True,
-                "joints_reset": len(results)
+                "joints_reset": len(results),
+                "cubes_reset": cubes_reset
             })
-            
+
         except Exception as e:
             return jsonify({"error": f"Failed to reset joints: {str(e)}"}), 500
 

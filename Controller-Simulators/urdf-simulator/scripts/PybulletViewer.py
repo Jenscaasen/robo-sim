@@ -338,19 +338,19 @@ def main() -> None:
 
         print(f"Controllable joints: {len(joints)}")
 
+        # Drop cubes on the floor (if floor is present)
+        cube_ids = []
+        if (not args.no_plane) and args.cube_count and args.cube_count > 0:
+            cube_ids = spawn_cubes_on_floor(args.cube_count)
+
         # Prepare HTTP control
         http_targets: Dict[int, float] = {}
         targets_lock = threading.Lock()
         joints_info_map = build_joints_index_map(joints)
 
         if not args.no_http:
-            start_http_server(args.http_host, args.http_port, http_targets, joints_info_map, targets_lock, robot_id)
+            start_http_server(args.http_host, args.http_port, http_targets, joints_info_map, targets_lock, robot_id, cube_ids)
             print(f"HTTP API at http://{args.http_host}:{args.http_port} (GET /api/health, /api/joints, /api/joint/<id>/<value>[/instant], /api/camera/<id>)")
-
-        # Drop cubes on the floor (if floor is present)
-        cube_ids = []
-        if (not args.no_plane) and args.cube_count and args.cube_count > 0:
-            cube_ids = spawn_cubes_on_floor(args.cube_count)
 
         # Spawn containers
         container_info = []

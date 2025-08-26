@@ -32,7 +32,7 @@ def predict_angles(cam1_xy, cam2_xy, cam3_xy):
     return pred_scaled * 1.5         # back to original units
 
 
-model = keras.models.load_model('best_inverse_kinematics.keras')
+model = keras.models.load_model('best_inverse_kinematics_dataset_20250825_221450_val_loss_0_32.keras')
 
 def main():
     """Main function for run2.py"""
@@ -61,7 +61,7 @@ def main():
     print("📊 RESULTS - TensorFlow Model")
     print("=" * 50)
     print("Predicted joint angles (radians):")
-    joints = ["shoulder_yaw", "shoulder_pitch", "elbow_pitch", "wrist_pitch", "wrist_roll"]
+    joints = ["shoulder_yaw", "shoulder_pitch", "elbow_pitch", "wrist_roll_1", "wrist_yaw"]
     for name, val in zip(joints, predicted_angles):
         print(f"  {name:<15s}: {val:+.6f}")
     

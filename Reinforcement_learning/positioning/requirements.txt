@@ -1,0 +1,14 @@
+# Core RL + vision stack
+gymnasium>=0.29.1
+stable-baselines3[extra]>=2.3.0
+torch>=2.2
+
+# HTTP + utils
+requests>=2.32.0
+numpy>=1.26.0
+
+# Vision
+opencv-python>=4.10.0.84
+
+# Logging and progress
+tqdm>=4.66.0

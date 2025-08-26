@@ -60,17 +60,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$LOAD_BALANCE_COUNT" -gt 0 ]; then
-    echo "Starting $LOAD_BALANCE_COUNT instances with load balancing..."
+    echo "Starting $LOAD_BALANCE_COUNT independent instances..."
 
-    # Start load balancer on port 5000
-    echo "Starting load balancer on port 5000..."
-    .venv/bin/python simple_load_balancer.py $LOAD_BALANCE_COUNT &
-    LOAD_BALANCER_PID=$!
-    echo "Load balancer started with PID $LOAD_BALANCER_PID"
-    sleep 2  # Give load balancer time to start
-
-    # Start instances on ports 5001 to 5000+LOAD_BALANCE_COUNT in direct mode
-    for ((i=1; i<=$LOAD_BALANCE_COUNT; i++)); do
+    # Start instances on ports 5000 to 5000+LOAD_BALANCE_COUNT-1
+    for ((i=0; i<=$LOAD_BALANCE_COUNT; i++)); do
         port=$((5000 + i))
         start_instance $port "--direct $EXTRA_ARGS"
         sleep 1  # Stagger instance starts
@@ -80,9 +73,7 @@ if [ "$LOAD_BALANCE_COUNT" -gt 0 ]; then
     echo "All instances started. Press Ctrl+C to stop everything."
     wait
 
-    # Cleanup
-    kill $LOAD_BALANCER_PID 2>/dev/null
-    echo "Load balancer and instances stopped."
+    echo "All instances stopped."
 else
     # Normal single instance mode
     echo "Activating virtual environment..."

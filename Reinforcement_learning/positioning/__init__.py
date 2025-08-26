@@ -1,0 +1,1 @@
+# Makes this directory a package so relative imports like ".RedDetector" work.

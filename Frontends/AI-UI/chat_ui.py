@@ -33,37 +33,39 @@ class ChatUI:
         if tool_calls:  # Only process if tool_calls is not None or empty
             for tool_call in tool_calls:
                 try:
-                    # Special handling for read_cam_image - display image to user
-                    if tool_call["function"]["name"] == "read_cam_image":
-                        # Fetch the image data separately for display
-                        camera_id = json.loads(tool_call["function"]["arguments"])["camera_id"]
-                        image_data = await app.state.chat_ui.mistral.simulator.read_cam_image(camera_id)
+                    name = tool_call["function"]["name"]
+                    args = json.loads(tool_call["function"]["arguments"]) if tool_call["function"].get("arguments") else {}
+
+                    # Special handling for read_cam_image - display image to user only
+                    if name == "read_cam_image":
+                        camera_id = args["camera_id"]
+                        image_data = await self.mistral.simulator.read_cam_image(camera_id)
+
                         # Send the image directly to the user via WebSocket
                         if self.websocket:
                             image_message = {
                                 "type": "image",
                                 "camera_id": camera_id,
-                                "image_data": image_data['image_data'],
+                                "image_data": image_data["image_data"],
                                 "message": f"Camera {camera_id} image"
                             }
                             await self.websocket.send_text(json.dumps(image_message))
-                        
-                        # Return only the confirmation message to the LLM
+
+                        # Return only the confirmation message string to the LLM (no base64 image)
                         tool_results.append({
                             "tool_call_id": tool_call["id"],
                             "role": "tool",
-                            "content": json.dumps(image_data['message'])
+                            "content": image_data["message"]
                         })
+
                     else:
-                        # Normal tool handling
-                        result = await self.mistral.call_tool(
-                            tool_call["function"]["name"],
-                            json.loads(tool_call["function"]["arguments"])
-                        )
+                        # Normal tool handling (including self_read_cam_image and others)
+                        result = await self.mistral.call_tool(name, args)
+                        content = result if isinstance(result, str) else json.dumps(result)
                         tool_results.append({
                             "tool_call_id": tool_call["id"],
                             "role": "tool",
-                            "content": json.dumps(result)
+                            "content": content
                         })
 
                 except Exception as e:
@@ -103,101 +105,119 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"User message: {message['content']}")
             print(f"Total messages in history: {len(chat_ui.messages)}")
 
-            # Get AI response
+            # First AI response
             response = await chat_ui.mistral.chat_completion(chat_ui.messages)
 
-            # Debug: Print the LLM response
-            print("\n=== DEBUG: LLM Response ===")
-            print(f"Response content: {response['choices'][0]['message']['content']}")
-            if "tool_calls" in response["choices"][0]["message"]:
-                print(f"Tool calls: {response['choices'][0]['message']['tool_calls']}")
+            max_tool_loops = 5
+            loops = 0
 
-            # Always add the assistant's response to message history
-            assistant_message = {
-                "role": "assistant",
-                "content": response["choices"][0]["message"]["content"]
-            }
+            while True:
+                assistant_msg = response["choices"][0]["message"]
+                assistant_content = assistant_msg.get("content")
+                tool_calls = assistant_msg.get("tool_calls") or []
 
-            # Include tool calls if they exist
-            if "tool_calls" in response["choices"][0]["message"] and response["choices"][0]["message"]["tool_calls"]:
-                assistant_message["tool_calls"] = response["choices"][0]["message"]["tool_calls"]
+                # Debug: Print the LLM response for this iteration
+                print("\n=== DEBUG: LLM Iteration Response ===")
+                print(f"Assistant content: {assistant_content}")
+                if tool_calls:
+                    print(f"Tool calls: {tool_calls}")
 
-            chat_ui.messages.append(assistant_message)
+                # Append assistant message if it has content or tool calls
+                if assistant_content or tool_calls:
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": assistant_content or ""
+                    }
+                    if tool_calls:
+                        assistant_message["tool_calls"] = tool_calls
+                    chat_ui.messages.append(assistant_message)
 
-            # Handle tool calls if any
-            if "tool_calls" in response["choices"][0]["message"] and response["choices"][0]["message"]["tool_calls"]:
-                tool_calls = response["choices"][0]["message"]["tool_calls"]
+                # Handle tool calls loop
+                if tool_calls:
+                    # Process the tool calls
+                    tool_results = await chat_ui.handle_tool_use(tool_calls)
 
-                # Process the tool calls
-                tool_results = await chat_ui.handle_tool_use(tool_calls)
+                    # Add tool results to message history with proper format
+                    for result in tool_results:
+                        # Ensure the tool result has the required 'name' field
+                        tool_call = next((tc for tc in tool_calls if tc["id"] == result["tool_call_id"]), None)
+                        if tool_call:
+                            result["name"] = tool_call["function"]["name"]
+                        chat_ui.messages.append(result)
 
-                # Add tool results to message history with proper format
-                for result in tool_results:
-                    # Ensure the tool result has the required 'name' field
-                    tool_call = next((tc for tc in tool_calls if tc["id"] == result["tool_call_id"]), None)
-                    if tool_call:
-                        result["name"] = tool_call["function"]["name"]
-                    chat_ui.messages.append(result)
+                    # Debug: Print tool results
+                    print("\n=== DEBUG: Tool Results ===")
+                    for result in tool_results:
+                        print(f"Tool result: {result}")
 
-                # Debug: Print tool results
-                print("\n=== DEBUG: Tool Results ===")
-                for result in tool_results:
-                    print(f"Tool result: {result}")
-
-                # Get a new response with the updated message history (assistant acknowledges tool results)
-                response = await chat_ui.mistral.chat_completion(chat_ui.messages)
-
-                # Add the assistant acknowledgment to message history
-                assistant_ack_message = {
-                    "role": "assistant",
-                    "content": response["choices"][0]["message"]["content"]
-                }
-                chat_ui.messages.append(assistant_ack_message)
-
-                # Check if there are self_read_cam_image calls AFTER the assistant acknowledgment
-                has_self_read = any(tool_call["function"]["name"] == "self_read_cam_image" for tool_call in tool_calls)
-
-                # Handle self_read_cam_image by adding image as user message AFTER assistant acknowledgment
-                if has_self_read:
-                    for tool_call in tool_calls:
-                        if tool_call["function"]["name"] == "self_read_cam_image":
-                            # Get the image data from the simulator
-                            camera_id = json.loads(tool_call["function"]["arguments"])["camera_id"]
-                            image_data = await app.state.chat_ui.mistral.simulator.read_cam_image(camera_id)
-
-                            # Add the image as a user message
-                            chat_ui.messages.append({
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/jpeg;base64,{image_data['image_data']}"
-                                        }
-                                    },
-                                    {
-                                        "type": "text",
-                                        "text": f"Camera {camera_id} image for AI observation"
-                                    }
-                                ]
-                            })
-
-                    # Get another response now that the image has been added
+                    # Get a new response with the updated message history (assistant acknowledges tool results)
                     response = await chat_ui.mistral.chat_completion(chat_ui.messages)
 
-                # Add the final assistant response to message history
-                new_assistant_message = {
-                    "role": "assistant",
-                    "content": response["choices"][0]["message"]["content"]
-                }
-                chat_ui.messages.append(new_assistant_message)
+                    # ALWAYS add the assistant acknowledgment to message history to maintain proper conversation flow
+                    # This prevents "Unexpected role 'user' after role 'tool'" errors
+                    ack_content = response["choices"][0]["message"]["content"]
+                    chat_ui.messages.append({
+                        "role": "assistant",
+                        "content": ack_content or ""  # Use empty string if no content
+                    })
 
-                # Debug: Print the final LLM response
-                print("\n=== DEBUG: Final LLM Response ===")
-                print(f"Response content: {response['choices'][0]['message']['content']}")
+                    # Check if there are self_read_cam_image calls AFTER the assistant acknowledgment
+                    has_self_read = any(tc["function"]["name"] == "self_read_cam_image" for tc in tool_calls)
 
-            # Send AI response
-            await websocket.send_text(json.dumps(response["choices"][0]["message"]["content"]))
+                    # Handle self_read_cam_image by adding image as user message AFTER assistant acknowledgment
+                    if has_self_read:
+                        for tc in tool_calls:
+                            if tc["function"]["name"] == "self_read_cam_image":
+                                # Get the image data from the simulator
+                                camera_id = json.loads(tc["function"]["arguments"])["camera_id"]
+                                image_data = await chat_ui.mistral.simulator.read_cam_image(camera_id)
+
+                                # Add the image as a user message (multipart content)
+                                chat_ui.messages.append({
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:image/jpeg;base64,{image_data['image_data']}"
+                                            }
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": f"Camera {camera_id} image for AI observation"
+                                        }
+                                    ]
+                                })
+
+                        # Get another response now that the image has been added
+                        response = await chat_ui.mistral.chat_completion(chat_ui.messages)
+
+                    loops += 1
+                    if loops >= max_tool_loops:
+                        print("Max tool loop iterations reached; breaking to avoid infinite loop.")
+                        break
+
+                    # Continue to evaluate next response which may contain more tool calls or final answer
+                    continue
+
+                # No tool calls; break the loop
+                break
+
+            # Send AI response - use the most recent non-empty content
+            final_response_content = response["choices"][0]["message"]["content"]
+
+            # If the final response is empty, look for the last meaningful assistant response in history
+            if not final_response_content:
+                for msg in reversed(chat_ui.messages):
+                    if msg.get("role") == "assistant" and msg.get("content"):
+                        final_response_content = msg["content"]
+                        break
+
+            # If still no content, send a default acknowledgment
+            if not final_response_content:
+                final_response_content = "Tool executed successfully."
+
+            await websocket.send_text(json.dumps(final_response_content))
 
     except WebSocketDisconnect:
         print("Client disconnected")

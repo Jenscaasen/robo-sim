@@ -8,3 +8,11 @@ pytest>=7.0.0
 pytest-asyncio>=0.19.0
 mistralai
 opencv-python
+pandas
+numpy
+scikit-learn
+torch
+requests
+opencv-python
+pillow
+tensorflow

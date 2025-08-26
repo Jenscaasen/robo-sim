@@ -27,9 +27,9 @@ class SimulatorClient:
         response.raise_for_status()
         return response.json()
 
-    async def set_multiple_joints(self, joints: List[Dict], fast: bool = False) -> Dict:
+    async def set_multiple_joints(self, joints: List[Dict]) -> Dict:
         """Set multiple joint positions simultaneously"""
-        endpoint = "/api/joints/instant" if not fast else "/api/joints/fast"
+        endpoint = "/api/joints"
         response = await self.client.post(f"{self.base_url}{endpoint}", json=joints)
         response.raise_for_status()
         return response.json()
