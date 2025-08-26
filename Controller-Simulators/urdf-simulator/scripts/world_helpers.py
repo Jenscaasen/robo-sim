@@ -14,7 +14,7 @@ def add_wall(x: float = 0.0, rgba=(0.6, 0.6, 0.6, 1.0)) -> int:
     return wid
 
 
-def spawn_cubes_on_floor(count: int, x: float = 0.5, y0: float = 0.0, z: float = 0.05, spacing: float = 0.15) -> List[int]:
+def spawn_cubes_on_floor(count: int, x: float = 0.5, y0: float = 0.0, z: float = 0.65, spacing: float = 0.15) -> List[int]:
     import pybullet as p
     ids: List[int] = []
     palette = [

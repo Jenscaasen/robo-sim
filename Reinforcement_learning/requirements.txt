@@ -1,0 +1,16 @@
+# Core Reinforcement Learning and Environment Libraries
+gymnasium==0.29.1
+stable-baselines3==2.0.0
+torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+
+# HTTP Requests
+requests==2.31.0
+
+# Image Processing for Camera Inputs
+opencv-python==4.8.1.78
+
+# Numerical Operations (usually included with above, but good to be explicit)
+numpy==1.24.4
+
+# Optional: For better visualization during training (e.g., TensorBoard)
+tensorboard==2.13.0

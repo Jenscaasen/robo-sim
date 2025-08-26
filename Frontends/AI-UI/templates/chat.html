@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Robot Arm AI Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Robot Arm AI Chat</h1>
+        <div id="chat-container">
+            <div id="messages"></div>
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Type your message...">
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+        <div id="camera-views">
+            <div class="camera-controls">
+                <h2>Camera Views</h2>
+                <button id="pause-camera-button" onclick="toggleCameraRefresh()">Resume Cameras</button>
+            </div>
+            <div class="camera-grid">
+                <div class="camera-view">
+                    <h3>Camera 1</h3>
+                    <img id="cam1" src="" alt="Camera 1">
+                </div>
+                <div class="camera-view">
+                    <h3>Camera 2</h3>
+                    <img id="cam2" src="" alt="Camera 2">
+                </div>
+                <div class="camera-view">
+                    <h3>Camera 3</h3>
+                    <img id="cam3" src="" alt="Camera 3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket("ws://" + window.location.host + "/ws");
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            // Check if this is an image message
+            if (data.type === 'image') {
+                addImageMessage(data);
+            } else {
+                // Regular text message
+                addMessage(data, 'ai');
+            }
+        };
+
+        function addMessage(text, sender) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+
+            // Preserve newlines and format the message
+            const formattedText = text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Format **bold** text
+                .replace(/\n/g, '<br>'); // Preserve newlines
+
+            messageDiv.innerHTML = `
+                <div class="message-header">${sender}</div>
+                <div class="message-content">${formattedText}</div>
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function addImageMessage(imageData) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ai';
+
+            messageDiv.innerHTML = `
+                <div class="message-header">ai</div>
+                <div class="message-content">
+                    <p>${imageData.message}</p>
+                    <img src="data:image/jpeg;base64,${imageData.image_data}" alt="Camera ${imageData.camera_id}" style="max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; margin-top: 10px;">
+                </div>
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        document.getElementById('send-button').addEventListener('click', sendMessage);
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value;
+            if (message.trim() === '') return;
+
+            addMessage(message, 'user');
+            socket.send(JSON.stringify({content: message}));
+            input.value = '';
+        }
+
+        // Function to update camera views
+        async function updateCameraView(cameraId, imgElement) {
+            try {
+                const response = await fetch(`/api/camera/${cameraId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    imgElement.src = `data:image/jpeg;base64,${data.image_data}`;
+                }
+            } catch (error) {
+                console.error(`Error updating camera ${cameraId}:`, error);
+            }
+        }
+
+        // Camera refresh control
+        let cameraRefreshInterval = null;
+        let isCameraPaused = true;
+
+        function toggleCameraRefresh() {
+            const pauseButton = document.getElementById('pause-camera-button');
+            if (isCameraPaused) {
+                // Resume camera refresh
+                cameraRefreshInterval = setInterval(() => {
+                    updateCameraView(1, document.getElementById('cam1'));
+                    updateCameraView(2, document.getElementById('cam2'));
+                    updateCameraView(3, document.getElementById('cam3'));
+                }, 2000);
+                pauseButton.textContent = 'Pause Cameras';
+                isCameraPaused = false;
+            } else {
+                // Pause camera refresh
+                clearInterval(cameraRefreshInterval);
+                pauseButton.textContent = 'Resume Cameras';
+                isCameraPaused = true;
+            }
+        }
+
+        // Camera refresh is disabled by default
+        // To enable, click the "Resume Cameras" button
+        // cameraRefreshInterval = setInterval(() => {
+        //     updateCameraView(1, document.getElementById('cam1'));
+        //     updateCameraView(2, document.getElementById('cam2'));
+        //     updateCameraView(3, document.getElementById('cam3'));
+        // }, 2000);
+    </script>
+</body>
+</html>

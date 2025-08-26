@@ -22,7 +22,13 @@ if CURRENT_DIR not in sys.path:
     sys.path.append(CURRENT_DIR)
 from world_helpers import add_wall, spawn_cubes_on_floor, spawn_containers
 from http_api import start_http_server
-from sticky_cube_system import StickyCubeSystem
+from apriltag_markers import (
+    spawn_apriltags_on_table,
+    spawn_apriltags_on_wall,
+    list_apriltag_images,
+    clear_tags_registry,
+    write_tags_registry_json,
+)
 
 
 REVOLUTE = p.JOINT_REVOLUTE; PRISMATIC = p.JOINT_PRISMATIC
@@ -72,14 +78,28 @@ def load_robot(urdf_path: str, fixed_base: bool, base_pos: List[float] = None, b
         base_pos = [0.0, 0.0, 0.0]
     if base_orn is None:
         base_orn = p.getQuaternionFromEuler([0, 0, 0])
-    robot_id = p.loadURDF(
-        urdf_path,
+    
+    print("############")
+    print(os.path.join(pybullet_data.getDataPath()))
+    print("############")
+    #"kuka_iiwa/model_free_base.urdf"
+    
+    #pandaUid = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "franka_panda/panda.urdf"),
+    #pandaUid = p.loadURDF("urdf/franka_panda/panda.urdf",
+    pandaUid = p.loadURDF("urdf/five_dof_arm_with_gripper_.urdf",
         basePosition=base_pos,
         baseOrientation=base_orn,
         useFixedBase=bool(fixed_base),
-        flags=p.URDF_USE_INERTIA_FROM_FILE | p.URDF_MERGE_FIXED_LINKS,
-    )
-    return robot_id
+        flags=p.URDF_USE_INERTIA_FROM_FILE | p.URDF_MERGE_FIXED_LINKS)
+        
+    #robot_id = p.loadURDF(
+    #    urdf_path,
+    #    basePosition=base_pos,
+    #    baseOrientation=base_orn,
+    #    useFixedBase=bool(fixed_base),
+    #    flags=p.URDF_USE_INERTIA_FROM_FILE | p.URDF_MERGE_FIXED_LINKS,
+    #)
+    return pandaUid
 
 
 def get_controllable_joints(body_id: int) -> List[Tuple[int, str, int, float, float, float, float]]:
@@ -198,7 +218,6 @@ def run_loop(
     use_sliders: bool,
     http_targets: Dict[int, float],
     lock: threading.Lock,
-    sticky_cube_system: StickyCubeSystem = None,
 ) -> None:
     slider_map = create_joint_sliders(joints) if use_sliders else {}
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1 if use_sliders else 0)
@@ -208,10 +227,6 @@ def run_loop(
         while True:
             drive_joints_position(body_id, joints, slider_map, http_targets, lock)
             
-            # Update sticky cube system if available
-            if sticky_cube_system is not None:
-                sticky_cube_system.update()
-            
             if not realtime:
                 p.stepSimulation()
                 time.sleep(1.0 / 240.0)
@@ -219,10 +234,6 @@ def run_loop(
                 time.sleep(1.0 / 240.0)
     except KeyboardInterrupt:
         pass
-    finally:
-        # Clean up sticky cube system
-        if sticky_cube_system is not None:
-            sticky_cube_system.cleanup()
 
 
 def parse_args() -> argparse.Namespace:
@@ -237,11 +248,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wall-mount", action="store_true", default=True, help="Mount robot on vertical wall at x=--wall-x and add wall plane (default)")
     parser.add_argument("--no-wall-mount", dest="wall_mount", action="store_false", help="Disable wall mount (mount on ground instead)")
     parser.add_argument("--wall-x", type=float, default=0.0, help="X position of wall plane when --wall-mount")
-    parser.add_argument("--base-height", type=float, default=0.75, help="Base height (z) when wall-mounted")
+    parser.add_argument("--base-height", type=float, default=1.35, help="Base height (z) when wall-mounted")
     parser.add_argument("--cube-count", type=int, default=3, help="Number of cubes to drop on the floor (0 to disable)")
     parser.add_argument("--container-count", type=int, default=2, help="Number of containers to spawn (0 to disable)")
-    parser.add_argument("--enable-sticky-cubes", action="store_true", default=True, help="Enable sticky cube system (default)")
-    parser.add_argument("--disable-sticky-cubes", dest="enable_sticky_cubes", action="store_false", help="Disable sticky cube system")
 
     # HTTP API options
     parser.add_argument("--http-host", type=str, default="127.0.0.1", help="HTTP API bind host (default: 127.0.0.1)")
@@ -259,6 +268,61 @@ def main() -> None:
         # Wall-mounted orientation and placement
         if args.wall_mount:
             add_wall(args.wall_x)
+            #os.path.join(pybullet_data.getDataPath(), "franka_panda/panda.urdf")
+            # Add table below the robot (table surface at 0.6m height)
+            # Load table rotated 90 degrees around Z so the long edge aligns correctly
+            table_yaw = math.pi / 2.0
+            table_orn = p.getQuaternionFromEuler([0, 0, table_yaw])
+            table_pos = [float(args.wall_x), 0.0, 0.0]
+            table_id = p.loadURDF("table/table.urdf", basePosition=table_pos, baseOrientation=table_orn)
+
+            # Snap table fully in front of the wall plane (x = wall_x) with a small clearance
+            try:
+                clearance = 0.01
+                aabb_min, aabb_max = p.getAABB(table_id)
+                x_min = aabb_min[0]
+                desired_x_min = float(args.wall_x) + clearance
+                dx = desired_x_min - x_min
+                if abs(dx) > 1e-6:
+                    base_pos_now, base_orn_now = p.getBasePositionAndOrientation(table_id)
+                    new_pos = [base_pos_now[0] + dx, base_pos_now[1], base_pos_now[2]]
+                    p.resetBasePositionAndOrientation(table_id, new_pos, base_orn_now)
+            except Exception as e:
+                print(f"Failed to reposition table against wall: {e}", file=sys.stderr)
+
+            # Place AprilTags after final table pose
+            try:
+                # Reset registry for this run
+                clear_tags_registry()
+
+                # Ensure unique tags on the table. Use as many as available (up to 9 positions).
+                images = list_apriltag_images()
+                table_positions_needed = 9
+                table_img_count = min(len(images), table_positions_needed)
+                table_images = images[:table_img_count]
+                spawn_apriltags_on_table(table_id, image_files=table_images)
+
+                # Optionally place tags on the wall too, using remaining unique images if any (up to 6 positions).
+                wall_positions_needed = 6
+                remaining = images[table_img_count:]
+                wall_img_count = min(len(remaining), wall_positions_needed)
+                if wall_img_count > 0:
+                    wall_images = remaining[:wall_img_count]
+                    spawn_apriltags_on_wall(args.wall_x, table_id, image_files=wall_images)
+                else:
+                    print("No remaining unique AprilTag images for wall placement; skipped wall tags.")
+
+                # Export world-space AprilTag mapping JSON for downstream calibration (Option B)
+                tags_json_out = os.path.normpath(os.path.join(CURRENT_DIR, "..", "..", "3d-april-tags-coordinate-test", "tags_world.json"))
+                try:
+                    os.makedirs(os.path.dirname(tags_json_out), exist_ok=True)
+                    write_tags_registry_json(tags_json_out)
+                    print(f"Exported AprilTags world mapping to: {tags_json_out}")
+                except Exception as ex:
+                    print(f"Failed to write AprilTags world mapping JSON: {ex}", file=sys.stderr)
+            except Exception as e:
+                print(f"Failed to spawn AprilTags: {e}", file=sys.stderr)
+
             base_pos = [float(args.wall_x), 0.0, float(args.base_height)]
             base_orn = p.getQuaternionFromEuler([0, math.pi / 2.0, 0])  # Z-up -> X-up (onto wall)
         else:
@@ -283,65 +347,15 @@ def main() -> None:
             start_http_server(args.http_host, args.http_port, http_targets, joints_info_map, targets_lock, robot_id)
             print(f"HTTP API at http://{args.http_host}:{args.http_port} (GET /api/health, /api/joints, /api/joint/<id>/<value>[/instant], /api/camera/<id>)")
 
-        # Initialize sticky cube system
-        sticky_cube_system = None
-        if args.enable_sticky_cubes:
-            # Find the end effector link index by looking for the actual end_effector link
-            end_effector_link_index = -1
-            wrist_roll_joint_index = -1
-            
-            num_joints = p.getNumJoints(robot_id)
-            
-            for i in range(num_joints):
-                joint_info = p.getJointInfo(robot_id, i)
-                joint_name = decode_name(joint_info[1])
-                link_name = decode_name(joint_info[12])  # Child link name
-                
-                # Find wrist roll joint index
-                if "wrist_roll" in joint_name.lower():
-                    wrist_roll_joint_index = i
-                
-                # Find end effector link
-                if "end_effector" in link_name.lower():
-                    end_effector_link_index = i
-            
-            # If we didn't find end_effector link, use the last joint
-            if end_effector_link_index == -1:
-                end_effector_link_index = num_joints - 1
-            
-            # If we didn't find wrist_roll joint, use joint 4 (default)
-            if wrist_roll_joint_index == -1:
-                wrist_roll_joint_index = 4
-            
-            sticky_cube_system = StickyCubeSystem(robot_id, end_effector_link_index, wrist_roll_joint_index)
-            print(f"🤖 Sticky cube system enabled")
-
         # Drop cubes on the floor (if floor is present)
         cube_ids = []
         if (not args.no_plane) and args.cube_count and args.cube_count > 0:
             cube_ids = spawn_cubes_on_floor(args.cube_count)
-            
-            # Register cubes with sticky system
-            if sticky_cube_system is not None:
-                for cube_id in cube_ids:
-                    sticky_cube_system.register_cube(cube_id)
 
         # Spawn containers
         container_info = []
         if args.container_count and args.container_count > 0:
             container_info = spawn_containers(args.container_count)
-            
-            # Register containers with sticky system
-            if sticky_cube_system is not None:
-                for container_id, container_name in container_info:
-                    # Container size and position (matching spawn_containers)
-                    container_size = (0.2, 0.2, 0.15)
-                    base_x, base_y, spacing = 1.2, 0.0, 0.4
-                    container_index = container_info.index((container_id, container_name))
-                    y_pos = base_y + (container_index - (len(container_info) - 1) * 0.5) * spacing
-                    position = (base_x, y_pos, container_size[2]/2)
-                    
-                    sticky_cube_system.register_container(container_id, position, container_size, container_name)
 
         run_loop(
             robot_id,
@@ -350,7 +364,6 @@ def main() -> None:
             use_sliders=args.gui,
             http_targets=http_targets,
             lock=targets_lock,
-            sticky_cube_system=sticky_cube_system,
         )
     finally:
         p.disconnect()
